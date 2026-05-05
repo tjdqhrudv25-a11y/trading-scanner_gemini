@@ -13,8 +13,17 @@ st.subheader("전략 1: EMA 200 위에서 SuperTrend 매수 신호 발생 종목
 # 1. S&P 500 종목 리스트 자동 가져오기
 @st.cache_data
 def get_sp500_tickers():
-    table = pd.read_html('https://en.wikipedia.org/wiki/List_of_S%26P_500_companies')
+    import urllib.request
+    url = 'https://en.wikipedia.org/wiki/List_of_S%26P_500_companies'
+    
+    # 브라우저인 것처럼 속이는 헤더 정보 추가
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    
+    with urllib.request.urlopen(req) as response:
+        table = pd.read_html(response)
+        
     df = table[0]
+    # 티커 심볼의 '.'을 '-'로 변경 (yfinance 호환성용)
     tickers = df['Symbol'].str.replace('.', '-', regex=True).tolist()
     return tickers
 
