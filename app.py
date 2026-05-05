@@ -51,7 +51,7 @@ def scan_stock(ticker):
         # 1. 현재가가 EMA 200 위에 있음
         # 2. 전날은 매도 신호였으나 오늘 매수 신호로 전환 (Golden Cross)
         is_above_ema = last_row['Close'] > last_row['EMA200']
-        is_supertrend_buy = (prev_row.iloc[-3] == -1) and (last_row.iloc[-3] == 1)
+        is_supertrend_buy = last_row.iloc[-3] == 1
 
         if is_above_ema and is_supertrend_buy:
             return {
