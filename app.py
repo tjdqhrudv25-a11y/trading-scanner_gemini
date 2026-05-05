@@ -30,37 +30,42 @@ def get_sp500_tickers():
 # 2. 개별 종목 분석 함수
 def scan_stock(ticker):
     try:
-        # 최근 1년치 일봉 데이터
-        df = yf.download(ticker, period="1y", interval="1d", progress=False)
+        # 1. 데이터 다운로드 (데이터 양을 2년으로 늘려 EMA200 계산 안정성 확보)
+        df = yf.download(ticker, period="2y", interval="1d", progress=False)
         if len(df) < 200: return None
 
-        # EMA 200 계산
+        # 2. EMA 200 계산
         df['EMA200'] = ta.ema(df['Close'], length=200)
 
-        # SuperTrend 계산 (기본값: ATR 10, Multiplier 3)
+        # 3. SuperTrend 계산
         sti = ta.supertrend(df['High'], df['Low'], df['Close'], length=10, multiplier=3)
-        # sti 컬럼 구성: [SUPERT_10_3.0, SUPERTd_10_3.0, SUPERTl_10_3.0, SUPERTs_10_3.0]
-        # SUPERTd 가 1이면 매수(Trend Up), -1이면 매도(Trend Down)
+        if sti is None: return None
         
+        # 4. 데이터 합치기
         df = pd.concat([df, sti], axis=1)
         
+        # 5. SuperTrend 방향 컬럼 찾기 (보통 'SUPERTd_10_3.0' 형태임)
+        # 이름이 바뀌어도 찾을 수 있게 'SUPERTd'가 포함된 모든 컬럼명을 가져옵니다.
+        trend_cols = [col for col in df.columns if 'SUPERTd' in col]
+        if not trend_cols: return None
+        direction_col = trend_cols[0]
+        
         last_row = df.iloc[-1]
-        prev_row = df.iloc[-2]
 
-        # 전략 조건: 
-        # 1. 현재가가 EMA 200 위에 있음
-        # 2. 전날은 매도 신호였으나 오늘 매수 신호로 전환 (Golden Cross)
-        is_above_ema = last_row['Close'] > last_row['EMA200']
-        is_supertrend_buy = last_row.iloc[-3] == 1
+        # 6. 매수 유지 조건 (엄격한 골든크로스 대신 현재 상승 추세인 종목 모두)
+        # 종가가 EMA 200보다 높고, SuperTrend 방향이 1(상승)인 경우
+        is_above_ema = float(last_row['Close']) > float(last_row['EMA200'])
+        is_supertrend_buy = float(last_row[direction_col]) == 1
 
         if is_above_ema and is_supertrend_buy:
             return {
                 "Ticker": ticker,
                 "Price": round(float(last_row['Close']), 2),
                 "EMA200": round(float(last_row['EMA200']), 2),
-                "Signal": "BUY"
+                "Signal": "UP TREND"
             }
-    except:
+    except Exception as e:
+        # 에러 확인용 (필요시 st.write(e)로 확인 가능)
         return None
     return None
 
