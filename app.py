@@ -35,7 +35,7 @@ def scan_stock(ticker):
         df['EMA200'] = ta.ema(df['Close'], length=200)
 
         # 2. SuperTrend 계산 (10, 3)
-        sti = ta.supertrend(df['High'], df['Low'], df['Close'], length=10, multiplier=3)
+        sti = ta.supertrend(df['High'], df['Low'], df['Close'], length=14, multiplier=3)
         if sti is None: return None
         
         df = pd.concat([df, sti], axis=1)
