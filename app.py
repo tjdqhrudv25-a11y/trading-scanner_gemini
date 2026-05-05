@@ -25,44 +25,28 @@ def get_tickers_from_file():
 # 3. 개별 종목 분석 함수
 def scan_stock(ticker):
     try:
-        # 데이터 다운로드 (EMA 200 계산을 위해 넉넉히 250일치)
-        df = yf.download(ticker, period="1y", interval="1d", progress=False)
-        
-        if df.empty or len(df) < 200:
-            return None
+        # 데이터 기간을 100일로 짧게 (속도 향상)
+        df = yf.download(ticker, period="100d", interval="1d", progress=False)
+        if df.empty or len(df) < 20: return None
 
-        # 지표 계산: EMA 200
-        df['EMA200'] = ta.ema(df['Close'], length=200)
-
-        # 지표 계산: SuperTrend (10, 3)
+        # SuperTrend만 계산 (EMA 200 조건 삭제)
         sti = ta.supertrend(df['High'], df['Low'], df['Close'], length=10, multiplier=3)
-        if sti is None:
-            return None
+        if sti is None: return None
         
         df = pd.concat([df, sti], axis=1)
-        
-        # SuperTrend 방향 컬럼 찾기 (보통 'SUPERTd_10_3.0' 형태)
         trend_col = [col for col in df.columns if 'SUPERTd' in col][0]
-        
         last_row = df.iloc[-1]
-        
-        # 전략 조건 확인
-        # 조건 1: 종가가 이평선(EMA 200) 위
-        is_above_ema = float(last_row['Close']) > float(last_row['EMA200'])
-        # 조건 2: SuperTrend가 상승 유지(1) 상태
-        is_trend_up = float(last_row[trend_col]) == 1
 
-        if is_above_ema and is_trend_up:
+        # 현재 SuperTrend가 상승(1) 상태인 모든 종목 포착
+        if float(last_row[trend_col]) == 1:
             return {
                 "Ticker": ticker,
                 "현재가": round(float(last_row['Close']), 2),
-                "EMA200": round(float(last_row['EMA200']), 2),
-                "상태": "상승 추세 유지"
+                "상태": "상승 추세"
             }
     except Exception:
         return None
     return None
-
 # 4. 메인 실행 로직
 tickers = get_tickers_from_file()
 
