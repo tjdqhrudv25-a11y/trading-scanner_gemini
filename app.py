@@ -17,23 +17,34 @@ def get_tickers():
 
 def scan_stock(ticker):
     try:
-        # [수정] 데이터 다운로드 시 auto_adjust와 한도 설정을 강화함
-        df = yf.download(ticker, period="60d", interval="1d", progress=False, auto_adjust=True)
+        # 1. 데이터 다운로드
+        df = yf.download(ticker, period="100d", interval="1d", progress=False)
         
-        # 데이터가 아예 안 들어오는지 체크
-        if df is None or df.empty or len(df) < 10:
+        if df is None or df.empty or len(df) < 20:
             return {"Ticker": ticker, "Status": "데이터 수신 실패"}
 
-        # SuperTrend 계산
-        sti = ta.supertrend(df['High'], df['Low'], df['Close'], length=10, multiplier=3)
-        if sti is None:
-            return {"Ticker": ticker, "Status": "지표 계산 실패"}
+        # [핵심 수정] 다중 인덱스(Multi-index) 해제 및 컬럼명 단순화
+        # yfinance 업데이트로 인해 컬럼이 ('Close', 'AAPL') 식으로 들어오는 것을 방지합니다.
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
         
+        # 데이터가 Series 형태인 경우를 대비해 확실히 숫자로 변환
+        df['High'] = pd.to_numeric(df['High'], errors='coerce')
+        df['Low'] = pd.to_numeric(df['Low'], errors='coerce')
+        df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
+
+        # 2. SuperTrend 계산
+        sti = ta.supertrend(df['High'], df['Low'], df['Close'], length=10, multiplier=3)
+        
+        if sti is None or sti.empty:
+            return {"Ticker": ticker, "Status": "지표 계산 불가"}
+        
+        # 3. 데이터 합치기 및 결과 추출
         df = pd.concat([df, sti], axis=1)
         trend_col = [col for col in df.columns if 'SUPERTd' in col][0]
         
-        # [수정] 마지막 행의 값을 더 정확하게 추출
-        last_val = df[trend_col].iloc[-1]
+        # 마지막 유효한 값 찾기
+        last_val = df[trend_col].dropna().iloc[-1]
 
         if float(last_val) == 1:
             return {
@@ -42,7 +53,7 @@ def scan_stock(ticker):
                 "상태": "상승"
             }
     except Exception as e:
-        return {"Ticker": ticker, "Status": f"에러: {str(e)[:10]}"}
+        return {"Ticker": ticker, "Status": f"에러: {str(e)[:15]}"}
     return None
 
 tickers = get_tickers()
