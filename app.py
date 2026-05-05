@@ -5,79 +5,69 @@ import pandas_ta as ta
 import os
 from concurrent.futures import ThreadPoolExecutor
 
-# 1. 페이지 설정 및 제목
-st.set_page_config(page_title="S&P 500 전략 스캐너", layout="wide")
-st.title("📈 S&P 500 전략 스캐너 (파일 연동 버전)")
+st.set_page_config(page_title="최종 병기 스캐너", layout="wide")
+st.title("🔥 데이터 강제 호출 스캐너")
 
-# 2. tickers.txt 파일에서 리스트 불러오기
 @st.cache_data
-def get_tickers_from_file():
-    filename = "tickers.txt"
-    if os.path.exists(filename):
-        with open(filename, "r") as f:
-            # 줄바꿈 제거, 대문자 변환, 빈 줄 제외
-            tickers = [line.strip().upper() for line in f.readlines() if line.strip()]
-        return tickers
-    else:
-        st.error(f"⚠️ '{filename}' 파일이 없습니다! GitHub에 파일을 먼저 업로드해 주세요.")
-        return []
+def get_tickers():
+    if os.path.exists("tickers.txt"):
+        with open("tickers.txt", "r") as f:
+            return [line.strip().upper() for line in f.readlines() if line.strip()]
+    return []
 
-# 3. 개별 종목 분석 함수
 def scan_stock(ticker):
     try:
-        # 데이터 기간을 100일로 짧게 (속도 향상)
-        df = yf.download(ticker, period="100d", interval="1d", progress=False)
-        if df.empty or len(df) < 20: return None
+        # [수정] 데이터 다운로드 시 auto_adjust와 한도 설정을 강화함
+        df = yf.download(ticker, period="60d", interval="1d", progress=False, auto_adjust=True)
+        
+        # 데이터가 아예 안 들어오는지 체크
+        if df is None or df.empty or len(df) < 10:
+            return {"Ticker": ticker, "Status": "데이터 수신 실패"}
 
-        # SuperTrend만 계산 (EMA 200 조건 삭제)
+        # SuperTrend 계산
         sti = ta.supertrend(df['High'], df['Low'], df['Close'], length=10, multiplier=3)
-        if sti is None: return None
+        if sti is None:
+            return {"Ticker": ticker, "Status": "지표 계산 실패"}
         
         df = pd.concat([df, sti], axis=1)
         trend_col = [col for col in df.columns if 'SUPERTd' in col][0]
-        last_row = df.iloc[-1]
+        
+        # [수정] 마지막 행의 값을 더 정확하게 추출
+        last_val = df[trend_col].iloc[-1]
 
-        # 현재 SuperTrend가 상승(1) 상태인 모든 종목 포착
-        if float(last_row[trend_col]) == 1:
+        if float(last_val) == 1:
             return {
                 "Ticker": ticker,
-                "현재가": round(float(last_row['Close']), 2),
-                "상태": "상승 추세"
+                "현재가": round(float(df['Close'].iloc[-1]), 2),
+                "상태": "상승"
             }
-    except Exception:
-        return None
+    except Exception as e:
+        return {"Ticker": ticker, "Status": f"에러: {str(e)[:10]}"}
     return None
-# 4. 메인 실행 로직
-tickers = get_tickers_from_file()
+
+tickers = get_tickers()
 
 if tickers:
-    st.info(f"✅ 'tickers.txt'를 통해 {len(tickers)}개 종목을 로드했습니다.")
-    
-    if st.button('S&P 500 전 종목 분석 시작'):
-        progress_bar = st.progress(0)
-        status_text = st.empty()
+    st.write(f"현재 {len(tickers)}개 종목 준비 완료.")
+    if st.button('🚀 데이터 강제 스캔 시작'):
         results = []
+        logs = []
+        progress = st.progress(0)
         
-        # 병렬 처리를 통해 속도 향상 (max_workers는 10~15 권장)
-        with ThreadPoolExecutor(max_workers=12) as executor:
-            total = len(tickers)
+        # [중요] 속도보다는 안정성을 위해 workers를 5로 낮춥니다.
+        with ThreadPoolExecutor(max_workers=5) as executor:
             for i, res in enumerate(executor.map(scan_stock, tickers)):
                 if res:
-                    results.append(res)
-                
-                # 진행률 표시
-                prog = (i + 1) / total
-                progress_bar.progress(prog)
-                status_text.text(f"분석 중: {i+1}/{total} (포착된 종목: {len(results)}개)")
+                    if "상태" in res:
+                        results.append(res)
+                    else:
+                        logs.append(res)
+                progress.progress((i + 1) / len(tickers))
 
-        # 결과 출력
         if results:
-            st.success(f"🚀 분석 완료! 총 {len(results)}개 종목이 포착되었습니다.")
-            result_df = pd.DataFrame(results)
-            st.dataframe(result_df, use_container_width=True)
-            
-            # CSV 다운로드 버튼 추가
-            csv = result_df.to_csv(index=False).encode('utf-8-sig')
-            st.download_button("결과 다운로드 (CSV)", csv, "scan_results.csv", "text/csv")
+            st.success(f"드디어 {len(results)}개 종목을 찾아냈습니다!")
+            st.table(pd.DataFrame(results))
         else:
-            st.warning("현재 모든 조건을 만족하는 종목이 없습니다.")
+            st.error("이번에도 결과가 0개입니다. 아래 로그를 확인하세요.")
+            with st.expander("데이터 수신 상태 로그"):
+                st.write(pd.DataFrame(logs))
