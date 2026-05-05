@@ -17,43 +17,48 @@ def get_tickers():
 
 def scan_stock(ticker):
     try:
-        # 1. 데이터 다운로드
-        df = yf.download(ticker, period="100d", interval="1d", progress=False)
+        # EMA 200 계산을 위해 데이터를 넉넉히 250일치 가져옵니다.
+        df = yf.download(ticker, period="1y", interval="1d", progress=False)
         
-        if df is None or df.empty or len(df) < 20:
-            return {"Ticker": ticker, "Status": "데이터 수신 실패"}
+        if df is None or df.empty or len(df) < 200:
+            return None
 
-        # [핵심 수정] 다중 인덱스(Multi-index) 해제 및 컬럼명 단순화
-        # yfinance 업데이트로 인해 컬럼이 ('Close', 'AAPL') 식으로 들어오는 것을 방지합니다.
+        # 컬럼 구조 단순화 (필수)
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         
-        # 데이터가 Series 형태인 경우를 대비해 확실히 숫자로 변환
+        # 숫자형 변환
         df['High'] = pd.to_numeric(df['High'], errors='coerce')
         df['Low'] = pd.to_numeric(df['Low'], errors='coerce')
         df['Close'] = pd.to_numeric(df['Close'], errors='coerce')
 
+        # 1. EMA 200 계산
+        df['EMA200'] = ta.ema(df['Close'], length=200)
+
         # 2. SuperTrend 계산
         sti = ta.supertrend(df['High'], df['Low'], df['Close'], length=10, multiplier=3)
+        if sti is None: return None
         
-        if sti is None or sti.empty:
-            return {"Ticker": ticker, "Status": "지표 계산 불가"}
-        
-        # 3. 데이터 합치기 및 결과 추출
         df = pd.concat([df, sti], axis=1)
         trend_col = [col for col in df.columns if 'SUPERTd' in col][0]
         
-        # 마지막 유효한 값 찾기
-        last_val = df[trend_col].dropna().iloc[-1]
+        last_row = df.iloc[-1]
 
-        if float(last_val) == 1:
+        # 🎯 최종 필터 조건
+        # 조건 A: 현재가가 200일 이평선보다 위에 있음 (정배열 초입/유지)
+        is_above_ema = float(last_row['Close']) > float(last_row['EMA200'])
+        # 조건 B: SuperTrend가 상승(1) 신호 유지 중
+        is_trend_up = float(last_row[trend_col]) == 1
+
+        if is_above_ema and is_trend_up:
             return {
                 "Ticker": ticker,
-                "현재가": round(float(df['Close'].iloc[-1]), 2),
-                "상태": "상승"
+                "현재가": round(float(last_row['Close']), 2),
+                "EMA200": round(float(last_row['EMA200']), 2),
+                "상태": "강세 추세 포착"
             }
-    except Exception as e:
-        return {"Ticker": ticker, "Status": f"에러: {str(e)[:15]}"}
+    except Exception:
+        return None
     return None
 
 tickers = get_tickers()
