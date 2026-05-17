@@ -71,7 +71,7 @@ if tickers:
         results = []
         progress = st.progress(0)
         
-        with ThreadPoolExecutor(max_workers=10) as executor:
+        with ThreadPoolExecutor(max_workers=20) as executor:
             total = len(tickers)
             for i, res in enumerate(executor.map(scan_stock, tickers)):
                 if res:
